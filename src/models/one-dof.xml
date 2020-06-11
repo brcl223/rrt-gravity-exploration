@@ -1,0 +1,16 @@
+<mujoco model="three-dof">
+  <actuator>
+    <motor ctrllimited="false" ctrlrange="-80.0 80.0" joint="joint1" name="torq_right_j0"/>
+  </actuator>
+  <default>
+    <joint damping=".1"/>
+  </default>
+  <worldbody>
+    <!-- Each body has a minor amount of extra space so the simulation doesn't think they -->
+    <!-- are touching. This is important for the grav explorer to determine valid points -->
+    <body name="base" pos="0 0 0">
+      <geom size=".1 .1 0.5" type="box"/>
+      <joint name="joint1" pos="0 0 -0.4" axis="0 1 0"/>
+    </body>
+  </worldbody>
+</mujoco>

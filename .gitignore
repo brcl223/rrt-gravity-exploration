@@ -1,0 +1,6 @@
+MUJOCO_LOG.TXT
+data/*
+__pycache__/*
+
+# Include the data backup script
+!data/backup_data.sh

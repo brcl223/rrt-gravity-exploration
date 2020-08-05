@@ -1,5 +1,6 @@
 import pickle
 import sys
+import time
 
 from mujoco_py import load_model_from_xml, MjSim, MjViewer
 import numpy as np
@@ -11,7 +12,7 @@ from shared import get_logger
 if len(sys.argv) != 4:
     print("Wrong number of arguments supplied. Requires:")
     print("Model Name: panda-*dof")
-    print("Explorer: (rrt | rrt_star | random | tsp)")
+    print("Explorer: (rrt | rrt_star | random)")
     print("Desired node count: (positive integer value)")
     sys.exit(1)
 
@@ -19,6 +20,7 @@ if len(sys.argv) != 4:
 ######################################################################
 # Generic Params
 ######################################################################
+CURRENT_TIME = time.time()
 MODEL_NAME = sys.argv[1]
 EXPLORER = sys.argv[2]
 MODEL_XML_PATH = f"./src/models/{MODEL_NAME}.xml"
@@ -30,9 +32,10 @@ ACC_EPS = 1e-5
 USE_TAU_PREV = True
 NODE_COUNT = int(sys.argv[3])
 QPOS_FILENAME = f"./data/current/data-initial/{MODEL_NAME}-{EXPLORER}-{NODE_COUNT}_nodes-qpos.txt"
-TAUS_FILENAME = f"./data/current/data/initial/{MODEL_NAME}-{EXPLORER}-{NODE_COUNT}_nodes-taus.txt"
+TAUS_FILENAME = f"./data/current/data-initial/{MODEL_NAME}-{EXPLORER}-{NODE_COUNT}_nodes-taus.txt"
 DIST_FILENAME = f"./data/current/metadata/{MODEL_NAME}-{EXPLORER}-{NODE_COUNT}_nodes-simdist.txt"
 STEPS_FILENAME = f"./data/current/metadata/{MODEL_NAME}-{EXPLORER}-{NODE_COUNT}_nodes-simsteps.txt"
+ENERGY_FILENAME = f"./data/current/metadata/{MODEL_NAME}-{EXPLORER}-{NODE_COUNT}_nodes-simenergy.txt"
 METADATA_FILENAME = f"./data/current/metadata/{MODEL_NAME}-{EXPLORER}-{NODE_COUNT}_nodes-metadata.pickle"
 
 
@@ -51,13 +54,6 @@ RRT_STAR = True if EXPLORER == "rrt_star" else False
 RRT_IDFS = False
 RRT_STEP_EPS = 0.5
 RRT_REWIRE_RANGE = 1.0
-
-
-######################################################################
-# TSP Params
-######################################################################
-TSP = True if EXPLORER == "tsp" else False
-TSP_IMPROV_THRESHOLD = 0.05
 
 
 ########################################################
@@ -94,6 +90,17 @@ class Node:
 
     def is_root(self):
         return self.parent is None
+
+    def branch_size(self):
+        # Add one to account for the node itself when pruned
+        return child_count(self) + 1
+
+
+def child_count(node):
+    num_children = len(node.children)
+    for child in node.children:
+        num_children += child_count(child)
+    return num_children
 
 
 def dist(node_a, node_b):
@@ -197,7 +204,7 @@ def build_tree(dim, node_count=NODE_COUNT, rrt_star=True):
 
     # Cache our tree results if this is the first time running with these
     # conditions
-    save_tree(nodes)
+    save_tree(nodes, eps, rewire)
     return nodes
 
 
@@ -209,54 +216,6 @@ def generate_random_samples(dim, sample_size=NODE_COUNT):
     for _ in range(sample_size):
         points.append(np.random.uniform(low=MIN_VALUE[0:dim], high=MAX_VALUE[0:dim]))
     return points
-
-
-########################################################
-# TSP Exploration related code
-########################################################
-# Calculate the euclidian distance in n-space of the route r traversing cities c, ending at the path start.
-def path_distance(c):
-    return np.sum(np.linalg.norm(c[:-1] - c[1:]))
-
-
-# Reverse the order of all elements from element i to element k in array r.
-def two_opt_swap(c, c_len, i, k):
-    c[i:k+1] = c[k:-c_len+i-1:-1]
-
-
-def two_opt(cities,improvement_threshold):
-    # Make an array of row numbers corresponding to cities.
-    city_len = cities.shape[0]
-    # Initialize the improvement factor.
-    improvement_factor = 1
-    # Calculate the distance of the initial path.
-    best_distance = path_distance(cities)
-    # If the route is still improving, keep going!
-    num_iters = 0
-    while improvement_factor > improvement_threshold:
-        # Record the distance at the beginning of the loop.
-        distance_to_beat = best_distance
-        # From each city except the first and last,
-        for swap_first in range(1,city_len-2):
-            # to each of the cities following,
-            for swap_last in range(swap_first+1,city_len):
-                # try reversing the order of these cities
-                two_opt_swap(cities,city_len,swap_first,swap_last)
-                # and check the total distance with this modification.
-                new_distance = path_distance(cities)
-                # If the path distance is an improvement,
-                if new_distance < best_distance:
-                    # and update the distance corresponding to this route.
-                    best_distance = new_distance
-                    # Calculate how much the route has improved.
-                else:
-                    two_opt_swap(cities,city_len,swap_first,swap_last)
-        improvement_factor = 1 - best_distance/distance_to_beat
-        num_iters += 1
-        print(f"[INFO] Current Iter: {num_iters}")
-        print(f"[INFO] Current TSP Improvement Factor: {improvement_factor}")
-    # When the route is no longer improving substantially, stop searching and return the route.
-    return cities
 
 
 ########################################################
@@ -347,6 +306,7 @@ class SettlingTimeException(Exception):
 def find_q_and_g_at_node(sim, q_goal, pd, tau_prev=None, viewer=None):
     sim_dist = 0
     sim_steps = 0
+    energy = 0
     qc = None
     tau_pd = None
     q_prev = sim.data.qpos.copy()
@@ -366,6 +326,7 @@ def find_q_and_g_at_node(sim, q_goal, pd, tau_prev=None, viewer=None):
         sim_dist += norm(qc - q_prev)
         sim_steps += 1
         q_prev = qc
+        energy += np.dot(tau_pd, qv)
 
         if check_bad_sim(sim) or check_end_of_sim(sim):
             break
@@ -378,7 +339,7 @@ def find_q_and_g_at_node(sim, q_goal, pd, tau_prev=None, viewer=None):
     # Return the actual q value we stopped at and the tau value
     # needed to support that point under gravity
     # Also return total distance traveled
-    return qc, tau_pd, sim_dist, sim_steps
+    return qc, tau_pd, sim_dist, sim_steps, energy
 
 
 def find_closest_g(coord, nodes):
@@ -411,6 +372,8 @@ def rrt_explore(sim, pd, rrt_star=False, viewer=None):
     nq = sim.data.qpos.shape[0]
     metadata = {
         'collision_count': 0,
+        'max_nodes_removed_during_collision': 0,
+        'total_nodes_removed_during_collision': 0,
         'timeouts': 0,
     }
 
@@ -421,13 +384,14 @@ def rrt_explore(sim, pd, rrt_star=False, viewer=None):
     current_node = nodes[0] # Start with root node - always at 0
     # Go ahead and find the gravity of our first node
     print("Discovering info on initial node...")
-    q, tau, dist, steps = find_q_and_g_at_node(sim, current_node.coord, pd)
+    q, tau, dist, steps, energy = find_q_and_g_at_node(sim, current_node.coord, pd)
     current_node.coord = q
     current_node.tau = tau
 
     collected_data = [[current_node.coord, current_node.tau]]
     sim_dist = [dist]
     sim_steps = [steps]
+    sim_energy = [energy]
     print("Beginning exploration through entire tree...")
 
     while True:
@@ -436,10 +400,13 @@ def rrt_explore(sim, pd, rrt_star=False, viewer=None):
         if current_node.tau is None:
             tau_prev = find_closest_g(current_node.coord, collected_data)
             try:
-                q, t, dist, steps = find_q_and_g_at_node(sim, current_node.coord, pd, tau_prev, viewer=viewer)
+                q, t, dist, steps, energy = find_q_and_g_at_node(sim, current_node.coord, pd, tau_prev, viewer=viewer)
             except CollisionException as e:
                 print("Collision Occurred!")
+                branch_size_pruned = current_node.branch_size()
                 metadata['collision_count'] += 1
+                metadata['max_nodes_removed_during_collision'] = max(metadata['max_nodes_removed_during_collision'], branch_size_pruned)
+                metadata['total_nodes_removed_during_collision'] += branch_size_pruned
                 current_node = current_node.parent
                 # If the node we just had wasn't a leaf, we can get stuck in a loop
                 # So remove the offending child if it hasn't been already
@@ -456,6 +423,7 @@ def rrt_explore(sim, pd, rrt_star=False, viewer=None):
             collected_data.append([q,t])
             sim_dist.append(dist)
             sim_steps.append(steps)
+            sim_energy.append(energy)
 
             num_samples_collected = len(collected_data)
             if num_samples_collected % 100 == 0:
@@ -496,12 +464,12 @@ def rrt_explore(sim, pd, rrt_star=False, viewer=None):
     sim_dist = np.array(sim_dist)
     sim_steps = np.array(sim_steps)
 
-    assert len(collected_data) == len(sim_dist) == len(sim_steps)
+    assert len(collected_data) == len(sim_dist) == len(sim_steps) == len(sim_energy)
 
-    return collected_data, sim_dist, sim_steps, metadata
+    return collected_data, sim_dist, sim_steps, sim_energy, metadata
 
 
-def sequential_explore(sim, pd, tsp=False, viewer=None):
+def sequential_explore(sim, pd, viewer=None):
     nq = sim.data.qpos.shape[0]
     metadata = {
         'collision_count': 0,
@@ -511,30 +479,18 @@ def sequential_explore(sim, pd, tsp=False, viewer=None):
     # initial_data = load_data_if_available()
     initial_data = generate_random_samples(nq)
 
-    if tsp:
-        print(f"[INFO] Running TSP for dim({nq}) and node count: {NODE_COUNT}")
-        print(f"[INFO] Beginning TSP optimization with threshold {TSP_IMPROV_THRESHOLD}")
-        split_by = 1000
-        split = len(initial_data) // split_by
-        initial_data = np.array(initial_data)
-        for i in range(split):
-            print(f"[INFO] Starting iteration: {i + 1} of {split}")
-            start = i * split_by
-            end = start + split_by
-            initial_data[start:end] = two_opt(initial_data[start:end], TSP_IMPROV_THRESHOLD)
-        print(f"[INFO] TSP optimization finished.")
-   
     start_point = np.zeros(nq)
-    qstart, tau_start, dist, steps = find_q_and_g_at_node(sim, start_point, pd)
+    qstart, tau_start, dist, steps, energy = find_q_and_g_at_node(sim, start_point, pd)
     collected_data = [(qstart, tau_start)]
     sim_dists = [dist]
     sim_steps = [steps]
+    sim_energy = [energy]
 
     # Sequentially go through random list of points and record information
     for i, qpos in enumerate(initial_data):
         tau_prev = find_closest_g(qpos, collected_data)
         try:
-            q, t, dist, steps = find_q_and_g_at_node(sim, qpos, pd, tau_prev)
+            q, t, dist, steps, energy = find_q_and_g_at_node(sim, qpos, pd, tau_prev)
         except CollisionException as e:
             print("Collision Occurred!")
             metadata['collision_count'] += 1
@@ -547,6 +503,7 @@ def sequential_explore(sim, pd, tsp=False, viewer=None):
         collected_data.append((q,t))
         sim_dists.append(dist)
         sim_steps.append(steps)
+        sim_energy.append(energy)
 
         if i != 0 and (i + 1) % 100 == 0:
             print_stats(sim_dists, i + 1)
@@ -559,12 +516,12 @@ def sequential_explore(sim, pd, tsp=False, viewer=None):
     sim_dists = np.array(sim_dists)
     sim_steps = np.array(sim_steps)
 
-    assert len(collected_data) == len(sim_dists) == len(sim_steps)
+    assert len(collected_data) == len(sim_dists) == len(sim_steps) == len(sim_energy)
 
-    return collected_data, sim_dists, sim_steps, metadata
+    return collected_data, sim_dists, sim_steps, sim_energy, metadata
 
 
-if __name__ == '__main__':
+def main():
     xml = None
     with open(MODEL_XML_PATH, "r") as xml_file:
         xml = xml_file.read()
@@ -577,16 +534,21 @@ if __name__ == '__main__':
 
     if EXPLORER == "rrt" or EXPLORER == "rrt_star":
         rrt_star = True if EXPLORER == "rrt_star" else False
-        collected_data, sim_dist, sim_steps, md = rrt_explore(sim, pd, rrt_star=rrt_star)
-    elif EXPLORER == "random" or EXPLORER == "tsp":
-        collected_data, sim_dist, sim_steps, md = sequential_explore(sim, pd, tsp=TSP)
+        collected_data, sim_dist, sim_steps, sim_energy, md = rrt_explore(sim, pd, rrt_star=rrt_star)
+    elif EXPLORER == "random":
+        collected_data, sim_dist, sim_steps, sim_energy, md = sequential_explore(sim, pd)
     else:
-        print(f"Unknown explorer {EXPLORER}. Must be one of (rrt | rrt_star | random | tsp)")
+        print(f"Unknown explorer {EXPLORER}. Must be one of (rrt | rrt_star | random)")
         sys.exit(1)
    
     np.savetxt(QPOS_FILENAME, collected_data[:,0])
     np.savetxt(TAUS_FILENAME, collected_data[:,1])
     np.savetxt(DIST_FILENAME, sim_dist)
     np.savetxt(STEPS_FILENAME, sim_steps)
+    np.savetxt(ENERGY_FILENAME, sim_energy)
     with open(METADATA_FILENAME, "wb") as f:
         pickle.dump(md,f)
+
+
+if __name__ == '__main__':
+    main()

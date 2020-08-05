@@ -5,19 +5,17 @@ from mujoco_py import load_model_from_xml, MjSim
 import numpy as np
 
 # Check system arguments for model name
-if len(sys.argv) < 2:
-    print("Wrong number of arguments supplied. Requires <model name> (optional: <explorer> <num nodes>)")
+if len(sys.argv) != 4:
+    print("Wrong number of arguments supplied. Requires <model name> <explorer> <num nodes>")
     sys.exit(1)
 
 XML_MODEL_NAME = sys.argv[1]
-MODEL_NAME = XML_MODEL_NAME
-if len(sys.argv) > 2:
-    MODEL_NAME = f"{MODEL_NAME}-{sys.argv[2]}-{sys.argv[3]}_nodes"
+MODEL_NAME = f"{XML_MODEL_NAME}-{sys.argv[2]}-{sys.argv[3]}_nodes"
 
-DIRTY_TAU_DATA_PATH = f"./data/current/{MODEL_NAME}-taus.txt"
-DIRTY_QPOS_DATA_PATH = f"./data/current/{MODEL_NAME}-qpos.txt"
-TAU_DATA_PATH = f"./data/current/{MODEL_NAME}-cleaned_taus.txt"
-QPOS_DATA_PATH = f"./data/current/{MODEL_NAME}-cleaned_qpos.txt"
+DIRTY_TAU_DATA_PATH = f"./data/current/data-initial/{MODEL_NAME}-taus.txt"
+DIRTY_QPOS_DATA_PATH = f"./data/current/data-initial/{MODEL_NAME}-qpos.txt"
+TAU_DATA_PATH = f"./data/current/data-cleaned/{MODEL_NAME}-cleaned_taus.txt"
+QPOS_DATA_PATH = f"./data/current/data-cleaned/{MODEL_NAME}-cleaned_qpos.txt"
 MODEL_XML_PATH = f"./src/models/{XML_MODEL_NAME}.xml"
 VEL_EPS = 1e-5
 ACC_EPS = 1e-5

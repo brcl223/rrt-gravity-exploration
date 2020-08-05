@@ -168,12 +168,12 @@ def test_network(sim, pd, net, it):
             n = norm(tau_predicted - t)
             loss_values.append(n)
 
-            # print("\n---------------RESULTS------------------")
-            # print(f"Tau from PD: {t}")
-            # print(f"Tau predicted from NN: {tau_predicted}")
-            # print(f"Norm difference in estimation: {n}")
-            # print("----------------------------------------\n")
-            # input("Enter to continue...")
+            print("\n---------------RESULTS------------------")
+            print(f"Tau from PD: {t}")
+            print(f"Tau predicted from NN: {tau_predicted}")
+            print(f"Norm difference in estimation: {n}")
+            print("----------------------------------------\n")
+            input("Enter to continue...")
         except KeyboardInterrupt:
             raise
         except Exception as e:

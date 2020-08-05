@@ -17,13 +17,14 @@ DESIRED_NODES = sys.argv[4]
 DATA_FILE = f"./data/current/{MODEL}-{EXPLORER}-{DESIRED_NODES}_nodes-{METRIC}.txt"
 OUTPUT_FILE = f"./data/current/graphs/{MODEL}-{EXPLORER}-{DESIRED_NODES}_nodes-{METRIC}_graph.png"
 
+
 def main():
     ylabel = "Loss" if "loss" in METRIC else "Variance"
 
     data = np.loadtxt(DATA_FILE)
-    train = data[:,0]
-    val = data[:,1]
-    test = data[:,2]
+    train = data[:, 0]
+    val = data[:, 1]
+    test = data[:, 2]
     assert len(train) == len(val) == len(test)
 
     plt.plot(train, label='Train')
@@ -33,7 +34,7 @@ def main():
     plt.title(f"{MODEL.title()} {EXPLORER.title()} NN {METRIC.title().replace('_', ' ')}")
     plt.ylabel(f"MSE {ylabel}")
     plt.xlabel("Training Batch")
-    plt.ylim(0,50)
+    plt.ylim(0, 50)
     plt.legend(loc='best')
     plt.savefig(OUTPUT_FILE)
 

@@ -14,8 +14,8 @@ if len(sys.argv) != 4:
 MODEL_NAME = sys.argv[1]
 EXPLORER_NAME = sys.argv[2]
 NODE_COUNT = sys.argv[3]
-EPOCHS = 10
-BATCH_SIZE = 80
+EPOCHS = 15
+BATCH_SIZE = 500
 K_FOLDS = 5
 DEVICE = 'cuda' if T.cuda.is_available() else 'cpu'
 NN_MODEL_CHECKPOINT_PATH = f"./data/current/weights-trained/{MODEL_NAME}-{EXPLORER_NAME}-{NODE_COUNT}_nodes-model_IDX.chkpnt"
@@ -27,6 +27,7 @@ AVG_LOSS_PATH = f"./data/current/data-nn/{MODEL_NAME}-{EXPLORER_NAME}-{NODE_COUN
 AVG_VAR_PATH = f"./data/current/data-nn/{MODEL_NAME}-{EXPLORER_NAME}-{NODE_COUNT}_nodes-avg_var.txt"
 MAX_LOSS_PATH = f"./data/current/data-nn/{MODEL_NAME}-{EXPLORER_NAME}-{NODE_COUNT}_nodes-max_loss.txt"
 MAX_VAR_PATH = f"./data/current/data-nn/{MODEL_NAME}-{EXPLORER_NAME}-{NODE_COUNT}_nodes-max_var.txt"
+NUM_SHUFFLES = 100
 
 ###########################################
 # Logging related utilities
@@ -93,7 +94,7 @@ def split_80_20(dataset, kfold=None):
 
 # Since shuffling via permutations, we need to make sure we have enough shuffles to be "random"
 # See the following resource: https://www.dartmouth.edu/~chance/teaching_aids/Mann.pdf
-def shuffle_unison(a, b, shuffles=12):
+def shuffle_unison(a, b, shuffles=NUM_SHUFFLES):
     assert len(a) == len(b)
     for i in range(shuffles):
         p = np.random.permutation(len(a))
